@@ -146,17 +146,41 @@ app.on('activate', () => {
     }
 });
 
-ipcMain.handle('cdv-plugin-exec', async (_, serviceName, action, ...args) => {
+//Encode error correctly See https://github.com/electron/electron/issues/24427
+const encodeError = function(e) {
+    if(typeof(e) === 'Error') {
+        return {name: e.name, code: e.code, message: e.message, extra: {...e}};
+    }
+    else {
+        return e;
+    }
+};
+
+ipcMain.handle('cdv-plugin-exec', async (_, serviceName, action, args) => {
+    // This function should never return a rejected promise or throw an exception, as otherwise ipcRenderer callback will convert the parameter to a string incapsulated in an Error. See https://github.com/electron/electron/issues/24427
     if (cordova && cordova.services && cordova.services[serviceName]) {
         const plugin = require(cordova.services[serviceName]);
 
-        return plugin[action]
-            ? plugin[action](args)
-            : Promise.reject(new Error(`The action "${action}" for the requested plugin service "${serviceName}" does not exist.`));
+        if(plugin[action]) {
+            try {
+                return plugin[action](args)
+                .then(function(res) {
+                    return { success: true, result: res };
+                })
+                .catch(function(e) { 
+                    return { error: encodeError(e) }; 
+                });
+            }
+            catch(e) {
+                return { error: encodeError(e) };
+            }
+        }
+        else {
+            return Promise.reject(new Error(`The action "${action}" for the requested plugin service "${serviceName}" does not exist.`));
+        }
     } else {
         return Promise.reject(new Error(`The requested plugin service "${serviceName}" does not exist have native support.`));
     }
 });
-
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and require them here.

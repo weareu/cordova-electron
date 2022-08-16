@@ -22,11 +22,27 @@ const { cordova } = require('./package.json');
 
 contextBridge.exposeInMainWorld('_cdvElectronIpc', {
     exec: (success, error, serviceName, action, args) => {
-        return ipcRenderer.invoke('cdv-plugin-exec', serviceName, action, args)
-            .then(
-                success,
-                error
-            );
+        ipcRenderer.invoke('cdv-plugin-exec', serviceName, action, args).then(function(res) {
+            const decodeError = function(err) {
+                if(typeof(err) === 'Object') {
+                    var ex = new Error(err.message);
+                    ex.name = err.name;
+                    ex.code = err.code;
+                    Object.assign(ex, err.extra);
+                    return ex;
+                }
+                else {
+                    return err;
+                }
+            };
+
+            if(success && res.success) {
+                success(res.result);
+            }
+            if(error && res.error) {
+                error(decodeError(res.error));
+            }
+        });
     },
 
     hasService: (serviceName) => cordova &&
