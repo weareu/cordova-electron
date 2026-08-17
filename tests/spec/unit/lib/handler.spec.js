@@ -208,10 +208,16 @@ describe('Handler export', () => {
             fs.rmSync(tmpDir, { recursive: true, force: true });
         });
 
+        function mockExeca () {
+            const execaSpy = jasmine.createSpy('execa');
+            execaSpy.sync = jasmine.createSpy('execa.sync');
+            handler.__set__('execa', execaSpy);
+            return execaSpy;
+        }
+
         describe('framework.install', () => {
             it('should not install framework when the source path does not exist.', async () => {
-                const execaSpy = jasmine.createSpy('execa');
-                handler.__set__('execa', execaSpy);
+                mockExeca();
 
                 spyOn(fs, 'existsSync').and.returnValue(false);
 
@@ -230,8 +236,7 @@ describe('Handler export', () => {
             });
 
             it('should update the electron app package when service is registered', async () => {
-                const execaSpy = jasmine.createSpy('execa');
-                handler.__set__('execa', execaSpy);
+                mockExeca();
 
                 // Mock npm install by updating the App's package.json
                 const appPackage = JSON.parse(
@@ -263,10 +268,7 @@ describe('Handler export', () => {
             });
 
             it('should not update the electron app package when there are no registered service', async () => {
-                const execaSpy = jasmine.createSpy('execa').and.returnValue({
-                    stdout: frameworkInstallElectronPluginId
-                });
-                handler.__set__('execa', execaSpy);
+                mockExeca();
 
                 // Mock npm install by updating the App's package.json
                 const appPackage = JSON.parse(
@@ -307,10 +309,7 @@ describe('Handler export', () => {
             });
 
             it('should warn when there are conflicting service name between more then one plugin', async () => {
-                const execaSpy = jasmine.createSpy('execa').and.returnValue({
-                    stdout: frameworkInstallElectronPluginId
-                });
-                handler.__set__('execa', execaSpy);
+                mockExeca();
 
                 // Mock npm install by updating the App's package.json
                 const appPackage = JSON.parse(
@@ -351,8 +350,7 @@ describe('Handler export', () => {
 
         describe('framework.uninstall', () => {
             it('should delink service name if defined', async () => {
-                const execaSpy = jasmine.createSpy('execa');
-                handler.__set__('execa', execaSpy);
+                mockExeca();
 
                 // Mock npm install by updating the App's package.json
                 const appPackage = JSON.parse(
@@ -390,8 +388,7 @@ describe('Handler export', () => {
             });
 
             it('should not delink service name if defined by another plugin', async () => {
-                const execaSpy = jasmine.createSpy('execa');
-                handler.__set__('execa', execaSpy);
+                mockExeca();
 
                 // Mock npm install by updating the App's package.json
                 const appPackage = JSON.parse(
@@ -425,8 +422,7 @@ describe('Handler export', () => {
             });
 
             it('should not delink service name when not defined', async () => {
-                const execaSpy = jasmine.createSpy('execa');
-                handler.__set__('execa', execaSpy);
+                mockExeca();
 
                 await handler.framework.uninstall(
                     frameworkInstallMockObject,
