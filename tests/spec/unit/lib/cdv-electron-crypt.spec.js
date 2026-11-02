@@ -112,6 +112,53 @@ describe('cdv-electron-crypt', () => {
         expect(logged).toHaveBeenCalled();
     });
 
+    describe('pass through', () => {
+        let netFetched;
+        let passThroughFile;
+        const fileRequest = (rel, range) => new Request(urlOf(rel), { headers: range ? { range } : {} });
+
+        beforeEach(() => {
+            netFetched = [];
+            fs.writeFileSync(path.join(appRoot, 'clip.mp4'), 'abcdefghij');
+            passThroughFile = require(LOADER).createPassThrough({
+                fetch: (request, options) => {
+                    netFetched.push(options);
+                    return new Response('from net');
+                }
+            });
+        });
+
+        it('leaves a request without a range to the file loader, bypassing this handler', async () => {
+            const response = await passThroughFile(fileRequest('clip.mp4'));
+            expect(await response.text()).toBe('from net');
+            expect(netFetched).toEqual([{ bypassCustomProtocolHandlers: true }]);
+        });
+
+        it('answers an open range with 206 and the media type', async () => {
+            const response = await passThroughFile(fileRequest('clip.mp4', 'bytes=0-'));
+            expect(response.status).toBe(206);
+            expect(response.headers.get('content-type')).toBe('video/mp4');
+            expect(response.headers.get('content-range')).toBe('bytes 0-9/10');
+            expect(await response.text()).toBe('abcdefghij');
+        });
+
+        it('answers a closed range and a suffix range with those bytes', async () => {
+            const closed = await passThroughFile(fileRequest('clip.mp4', 'bytes=2-4'));
+            expect(await closed.text()).toBe('cde');
+            expect(closed.headers.get('content-length')).toBe('3');
+            const suffix = await passThroughFile(fileRequest('clip.mp4', 'bytes=-2'));
+            expect(await suffix.text()).toBe('ij');
+        });
+
+        it('answers 416 past the end, and leaves a missing file to the file loader', async () => {
+            const past = await passThroughFile(fileRequest('clip.mp4', 'bytes=50-'));
+            expect(past.status).toBe(416);
+            expect(past.headers.get('content-range')).toBe('bytes */10');
+            await passThroughFile(fileRequest('missing.mp4', 'bytes=0-'));
+            expect(netFetched.length).toBe(1);
+        });
+    });
+
     it('registers a file handler only once the hook has written a key', () => {
         const handled = [];
         const protocol = { handle: scheme => handled.push(scheme) };

@@ -22,6 +22,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 const { fileURLToPath } = require('node:url');
 
 // Written by cordova-plugin-crypt-file's after_prepare hook. Empty means the
@@ -36,6 +37,17 @@ const MIME_TYPES = {
     '.htm': 'text/html',
     '.html': 'text/html',
     '.js': 'text/javascript'
+};
+
+const MEDIA_TYPES = {
+    '.m4a': 'audio/mp4',
+    '.mov': 'video/quicktime',
+    '.mp3': 'audio/mpeg',
+    '.mp4': 'video/mp4',
+    '.ogg': 'audio/ogg',
+    '.ogv': 'video/ogg',
+    '.wav': 'audio/wav',
+    '.webm': 'video/webm'
 };
 
 function matchesAny (patterns, relPath) {
@@ -97,14 +109,64 @@ function createFileHandler (appRoot, passThrough) {
     };
 }
 
+function parseRange (rangeHeader, size) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+    if (!match || (!match[1] && !match[2])) {
+        return null;
+    }
+    if (!match[1]) {
+        return { start: Math.max(size - Number(match[2]), 0), end: size - 1 };
+    }
+    return { start: Number(match[1]), end: match[2] ? Math.min(Number(match[2]), size - 1) : size - 1 };
+}
+
+/**
+ * The media element only plays a byte range answer, which a handled file scheme
+ * no longer gets from Chromium's own file loader.
+ */
+async function rangeResponse (request) {
+    const filePath = fileURLToPath(request.url);
+    const { size } = await fs.promises.stat(filePath);
+    const range = parseRange(request.headers.get('range'), size);
+    if (!range) {
+        return null;
+    }
+    if (range.start >= size || range.start > range.end) {
+        return new Response('', { status: 416, headers: { 'content-range': `bytes */${size}` } });
+    }
+    const contentType = MEDIA_TYPES[path.extname(filePath).toLowerCase()];
+    return new Response(Readable.toWeb(fs.createReadStream(filePath, range)), {
+        status: 206,
+        headers: {
+            'accept-ranges': 'bytes',
+            'content-length': String(range.end - range.start + 1),
+            'content-range': `bytes ${range.start}-${range.end}/${size}`,
+            ...(contentType ? { 'content-type': contentType } : {})
+        }
+    });
+}
+
+function createPassThrough (net) {
+    return async request => {
+        const unhandled = () => net.fetch(request, { bypassCustomProtocolHandlers: true });
+        if (!request.headers.get('range')) {
+            return unhandled();
+        }
+        try {
+            return (await rangeResponse(request)) || unhandled();
+        } catch (err) {
+            return unhandled();
+        }
+    };
+}
+
 /** Must run once, after the app is ready and before the first window loads. */
 function register (protocol, net, appRoot) {
     if (!CRYPT_KEY) {
         return false;
     }
-    const passThrough = request => net.fetch(request, { bypassCustomProtocolHandlers: true });
-    protocol.handle('file', createFileHandler(appRoot, passThrough));
+    protocol.handle('file', createFileHandler(appRoot, createPassThrough(net)));
     return true;
 }
 
-module.exports = { createFileHandler, register };
+module.exports = { createFileHandler, createPassThrough, register };
