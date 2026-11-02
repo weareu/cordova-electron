@@ -30,6 +30,7 @@ const {
 } = require('electron');
 // Electron settings from .json file.
 const cdvElectronSettings = require('./cdv-electron-settings.json');
+const cdvCrypt = require('./cdv-electron-crypt.js');
 const reservedScheme = require('./cdv-reserved-scheme.json');
 
 const devTools = cdvElectronSettings.browserWindow.webPreferences.devTools
@@ -129,6 +130,8 @@ function configureProtocol () {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', () => {
+    cdvCrypt.register(protocol, net, __dirname);
+
     if (!isFileProtocol) {
         configureProtocol();
     }
